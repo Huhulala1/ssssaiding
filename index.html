@@ -11,10 +11,12 @@
 <meta name="format-detection" content="telephone=no,email=no" />
 <meta name="description" content="一起吃饭吧 —— 中国家常菜 + 八大菜系的情侣点菜小程序：攸宝点单，我掌勺。" />
 <title>一起吃饭吧 · 情侣点菜</title>
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23FFF3E9'/%3E%3Cpath d='M32 50s-13-8-13-17a8 8 0 0 1 13-6 8 8 0 0 1 13 6c0 9-13 17-13 17z' fill='%23FF6F5E'/%3E%3C/svg%3E" />
 <style>
 /* =========================================================
-   一起吃饭吧 · 情侣`点菜
+   一起吃饭吧 · 情侣点菜
    奶油暖色 / 圆润可爱
    ========================================================= */
 
@@ -1416,6 +1418,19 @@ button { -webkit-appearance: none; appearance: none; }
 
 .qrbox svg { width: 220px; height: 220px; display: block; }
 .qrfallback { font-size: 11.5px; color: var(--ink-3); text-align: center; padding: 30px 10px; }
+
+.steps {
+  margin: 2px 0 0;
+  padding: 14px 16px 14px 34px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: var(--shadow-s);
+  font-size: 12px;
+  line-height: 1.9;
+  color: var(--ink-2);
+}
+.steps li { margin: 2px 0; }
+.steps b { color: var(--ink); font-weight: 800; }
 
 </style>
 </head>
@@ -3959,10 +3974,19 @@ window.SEED_MENU = [
   const KEY = 'eat-together-v1';
   const params = new URLSearchParams(location.search);
 
-  /* 云同步地址：?api=https://xxx.workers.dev，或上次保存过的 */
-  let apiBase = '';
+  /* 这台部署的云同步地址；写进页面，谁打开都自动连上 */
+  const CLOUD_API = 'https://eat-together.ssssaiding.workers.dev';
+  function isLocalEnv() {
+    if (location.protocol === 'file:') return true;
+    const h = location.hostname || '';
+    return !h || /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[::1\])/.test(h);
+  }
+  let savedApi = '';
   try {
-    apiBase = (params.get('api') || localStorage.getItem('et-api') || '').replace(/\/+$/, '');
+    savedApi = localStorage.getItem('et-api') || '';
+  } catch (err) {}
+  let apiBase = (params.get('api') || savedApi || (isLocalEnv() ? '' : CLOUD_API)).replace(/\/+$/, '');
+  try {
     if (params.get('api')) localStorage.setItem('et-api', apiBase);
   } catch (err) {}
   function apiUrl(path) {
@@ -4449,6 +4473,7 @@ window.SEED_MENU = [
         '<button type="button" class="row" data-act="manage"><span>🍲</span><span>管理菜单</span><em>' + S.menu.length + ' 道菜</em></button>' +
         '<button type="button" class="row" data-act="cloud"><span>☁️</span><span>异地同步</span><em>' + (apiBase ? (sync.on ? '已连接' : '待连接') : sync.on ? '本机' : '未连接') + '</em></button>' +
         '<button type="button" class="row" data-act="scan"><span>📱</span><span>微信扫码打开</span><em>手机 / 给 TA</em></button>' +
+        '<button type="button" class="row" data-act="install"><span>🏠</span><span>添加到手机桌面</span><em>' + (isStandalone() ? '已添加' : '像 App 一样') + '</em></button>' +
         '<button type="button" class="row" data-act="editprofile"><span>💌</span><span>改个称呼和头像</span><em>' + esc(orderer().name) + ' / ' + esc(chef().name) + '</em></button>' +
         (S.orders.length === 0
           ? '<button type="button" class="row" data-act="demo"><span>🎬</span><span>载入示例订单</span><em>先看看效果</em></button>'
@@ -4556,6 +4581,7 @@ window.SEED_MENU = [
     else if (ui.sheet === 'about') body.innerHTML = sheetAbout();
     else if (ui.sheet === 'scan') body.innerHTML = sheetScan();
     else if (ui.sheet === 'cloud') body.innerHTML = sheetCloud();
+    else if (ui.sheet === 'install') body.innerHTML = sheetInstall();
     else body.innerHTML = '';
   }
 
@@ -4710,9 +4736,10 @@ window.SEED_MENU = [
   }
 
   function shareUrl() {
-    if (apiBase) return location.origin + location.pathname + '?api=' + encodeURIComponent(apiBase);
-    if (sync.url) return sync.url;
-    return location.origin + location.pathname;
+    const base = location.origin + location.pathname;
+    if (apiBase && apiBase !== CLOUD_API) return base + '?api=' + encodeURIComponent(apiBase);
+    if (!apiBase) return sync.url || base;
+    return base;
   }
 
   function qrTag(text) {
@@ -4757,6 +4784,40 @@ window.SEED_MENU = [
         '<button type="button" class="btn btn--ghost btn--block" data-act="copylink">复制链接</button>' +
         '<button type="button" class="btn btn--primary btn--block" data-act="closesheet">好</button>' +
       '</div>'
+    );
+  }
+
+  function isStandalone() {
+    return (
+      (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+      window.navigator.standalone === true
+    );
+  }
+
+  function sheetInstall() {
+    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    if (isStandalone()) {
+      return (
+        sheetHead('已经在桌面模式', '点桌面图标就能直接打开') +
+        '<p class="about-text">你现在就是从桌面图标打开的，不用再添加。<br><br>想重新添加的话，先在手机上删掉旧图标，再重新「添加到主屏幕」。</p>' +
+        '<div class="sheet-actions"><button type="button" class="btn btn--primary btn--block" data-act="closesheet">好</button></div>'
+      );
+    }
+    const steps = ios
+      ? ['用 <b>Safari</b> 打开这个页面（不是微信里）',
+         '点底部中间的 <b>分享</b> 按钮（方框向上箭头）',
+         '往下滑，点 <b>添加到主屏幕</b>',
+         '右上角点 <b>添加</b>']
+      : ['用 <b>Chrome</b> 打开这个页面（不是微信里）',
+         '点右上角 <b>三个点</b> 菜单',
+         '点 <b>添加到主屏幕 / 安装应用</b>',
+         '确认 <b>添加</b>'];
+    return (
+      sheetHead('添加到手机桌面', ios ? 'iPhone / iPad' : 'Android / 电脑') +
+      '<p class="about-text">加完之后，点桌面图标就是全屏打开，没有地址栏，也不用再扫码。</p>' +
+      '<ol class="steps">' + steps.map((t) => '<li>' + t + '</li>').join('') + '</ol>' +
+      '<p class="qrnote">微信里不能直接添加：点右上角「…」→「在浏览器打开」，再按上面的步骤。</p>' +
+      '<div class="sheet-actions"><button type="button" class="btn btn--primary btn--block" data-act="closesheet">知道啦</button></div>'
     );
   }
 
@@ -5244,6 +5305,9 @@ window.SEED_MENU = [
         break;
       case 'scan':
         openSheet('scan');
+        break;
+      case 'install':
+        openSheet('install');
         break;
       case 'cloud':
         openSheet('cloud');
